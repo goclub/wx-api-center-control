@@ -1,0 +1,15 @@
+http_port: 8254
+sk:
+#  - name: 项目A
+#    value: 项目A调用时的sk
+#  - name: 项目B
+#    value: 项目B调用时的sk
+app:
+#  - appid: 某个APPID
+#    secret: 某个APPID地秘钥
+#  - appid: 某个APPID
+#    secret: 某个APPID地秘钥
+redis:
+  address: 127.0.0.1:6379
+  db: 0
+# sentry_dsn: https://public@sentry.example.com/1
