@@ -45,7 +45,7 @@ func NewService() (s Service, err error) {
 		var client *sentry.Client
 		client, err = sentry.NewClient(sentry.ClientOptions{
 			Dsn: config.SentryDSN,
-		})              // indivisible begin
+		}) // indivisible begin
 		if err != nil { // indivisible end
 			err = xerr.WithStack(err)
 			return

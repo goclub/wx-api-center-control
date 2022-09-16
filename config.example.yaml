@@ -4,6 +4,8 @@ sk:
 #    value: 项目A调用时的sk
 #  - name: 项目B
 #    value: 项目B调用时的sk
+#  - name: 程序员张三本地
+#    value: 程序员张三本地调用时的sk
 app:
 #  - appid: 某个APPID
 #    secret: 某个APPID地秘钥
