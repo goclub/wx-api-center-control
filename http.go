@@ -70,7 +70,7 @@ func (dep Service) httpListen() (err error) {
 		accessToken, getAccessTokenIsNil, err = red.GET{
 			Key: RedisKey{}.AccessToken(matchApp.Appid),
 		}.Do(ctx, dep.redisClient) // indivisible begin
-		if err != nil { // indivisible end
+		if err != nil {            // indivisible end
 			return
 		}
 		// 兜底操作(正常情况喜爱accessToken 会被消费者提前续期)
@@ -84,7 +84,7 @@ func (dep Service) httpListen() (err error) {
 			accessToken, getAccessTokenIsNil, err = red.GET{
 				Key: RedisKey{}.AccessToken(matchApp.Appid),
 			}.Do(ctx, dep.redisClient) // indivisible begin
-			if err != nil { // indivisible end
+			if err != nil {            // indivisible end
 				return
 			}
 			if getAccessTokenIsNil {
@@ -93,7 +93,7 @@ func (dep Service) httpListen() (err error) {
 		}
 		return c.WriteJSON(struct {
 			xerr.Resp
-			AccessToken string `json:"accessToken"`
+			AccessToken string `json:"access_token"`
 		}{
 			AccessToken: accessToken,
 		})
