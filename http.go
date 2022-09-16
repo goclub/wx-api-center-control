@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-func httpListen() (err error) {
+func (dep Service) httpListen() (err error) {
 	router := xhttp.NewRouter(xhttp.RouterOption{
 		OnCatchError: func(c *xhttp.Context, err error) error {
 			if reject, asReject := xerr.AsReject(err); asReject {
 				if reject.ShouldRecord {
-					sentryClient.Error(err)
+					dep.sentryClient.Error(err)
 				}
 				return c.WriteJSON(reject.Resp())
 			}
-			sentryClient.Error(err)
+			dep.sentryClient.Error(err)
 			c.WriteStatusCode(500)
 			return c.WriteBytes([]byte("system error(error)"))
 		},
@@ -43,7 +43,7 @@ func httpListen() (err error) {
 		// 验证appid
 		matchAppid := false
 		matchApp := ConfigApp{}
-		for _, app := range config.App {
+		for _, app := range dep.config.App {
 			if req.Appid == app.Appid {
 				matchAppid = true
 				matchApp = app
@@ -55,7 +55,7 @@ func httpListen() (err error) {
 		}
 		// 验证sk有效性
 		matchSK := false
-		for _, sk := range config.SK {
+		for _, sk := range dep.config.SK {
 			if req.SK == sk.Value {
 				matchSK = true
 				break
@@ -69,21 +69,21 @@ func httpListen() (err error) {
 		var getAccessTokenIsNil bool
 		accessToken, getAccessTokenIsNil, err = red.GET{
 			Key: RedisKey{}.AccessToken(matchApp.Appid),
-		}.Do(ctx, redisClient) // indivisible begin
+		}.Do(ctx, dep.redisClient) // indivisible begin
 		if err != nil { // indivisible end
 			return
 		}
 		// 兜底操作(正常情况喜爱accessToken 会被消费者提前续期)
 		if getAccessTokenIsNil {
-			sentryClient.Error(xerr.New("accessToken接口出现了意外兜底"))
-			err = wechatGetAndStoreAccessToken(ctx, matchApp, time.Second*10) // indivisible begin
-			if err != nil {                                                   // indivisible end
+			dep.sentryClient.Error(xerr.New("accessToken接口出现了意外兜底"))
+			err = dep.wechatGetAndStoreAccessToken(ctx, matchApp, time.Second*10) // indivisible begin
+			if err != nil {                                                       // indivisible end
 				return
 			}
 			// 读取刚存储的 access token
 			accessToken, getAccessTokenIsNil, err = red.GET{
 				Key: RedisKey{}.AccessToken(matchApp.Appid),
-			}.Do(ctx, redisClient) // indivisible begin
+			}.Do(ctx, dep.redisClient) // indivisible begin
 			if err != nil { // indivisible end
 				return
 			}
@@ -99,7 +99,7 @@ func httpListen() (err error) {
 		})
 	})
 	s := &http.Server{
-		Addr:    ":" + config.HttpPort,
+		Addr:    ":" + dep.config.HttpPort,
 		Handler: router,
 	}
 	router.LogPatterns(s)

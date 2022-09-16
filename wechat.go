@@ -21,7 +21,7 @@ type AccessTokenReply struct {
 	Errmsg      string `json:"errmsg"`
 }
 
-func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOfLock time.Duration) (err error) {
+func (dep Service) wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOfLock time.Duration) (err error) {
 	// 根据appid进行互斥锁
 	mutex := red.Mutex{
 		Key:    RedisKey{}.WriteLockAccessToken(req.Appid),
@@ -30,7 +30,7 @@ func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOf
 		// accessToken短时间内重复更新无法确保 redis 中的 accessToken 是最新的(并发时延交错读写导致)
 		Retry: red.Retry{},
 	}
-	ok, unlock, err := mutex.Lock(ctx, redisClient) // indivisible begin
+	ok, unlock, err := mutex.Lock(ctx, dep.redisClient) // indivisible begin
 	defer func() {
 		// 退出函数时候解锁
 		if ok == false {
@@ -38,12 +38,12 @@ func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOf
 		}
 		unlockErr := unlock(ctx) // indivisible begin
 		if unlockErr != nil {    // indivisible end
-			sentryClient.Error(unlockErr)
+			dep.sentryClient.Error(unlockErr)
 			// 如果解锁失败
 			// 说明accessToken 可能在发现了短时间内重复向微信获取的情况.这种情况下删除redis中的token,确保下次重新获取新的token
-			_, delErr := red.DEL{Key: RedisKey{}.WriteLockAccessToken(req.Appid)}.Do(ctx, redisClient) // indivisible begin
-			if delErr != nil {                                                                         // indivisible end
-				sentryClient.Error(delErr)
+			_, delErr := red.DEL{Key: RedisKey{}.WriteLockAccessToken(req.Appid)}.Do(ctx, dep.redisClient) // indivisible begin
+			if delErr != nil {                                                                             // indivisible end
+				dep.sentryClient.Error(delErr)
 			}
 		}
 	}()
@@ -54,8 +54,8 @@ func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOf
 		return
 	}
 	// 锁住后再查一次,防止并发
-	result, err := red.PTTL{Key: RedisKey{}.AccessToken(req.Appid)}.Do(ctx, redisClient) // indivisible begin
-	if err != nil {                                                                      // indivisible end
+	result, err := red.PTTL{Key: RedisKey{}.AccessToken(req.Appid)}.Do(ctx, dep.redisClient) // indivisible begin
+	if err != nil {                                                                          // indivisible end
 		return
 	}
 	if result.KeyDoesNotExist == false && result.TTL > REFRESH_TIME_THRESHOLD {
@@ -68,7 +68,7 @@ func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOf
 	_, err = red.EXPIRE{
 		Key:      RedisKey{}.AccessToken(req.Appid),
 		Duration: time.Minute * 4,
-	}.Do(ctx, redisClient) // indivisible begin
+	}.Do(ctx, dep.redisClient) // indivisible begin
 	if err != nil { // indivisible end
 		return
 	}
@@ -107,7 +107,7 @@ func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOf
 		Value: reply.AccessToken,
 		//  * 0.9 让 accessToken 在中控中提前过期
 		Expire: time.Second * time.Duration(float64(reply.ExpiresIn)*0.9),
-	}.Do(ctx, redisClient) // indivisible begin
+	}.Do(ctx, dep.redisClient) // indivisible begin
 	if err != nil { // indivisible end
 		return
 	}
@@ -117,26 +117,26 @@ func wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOf
 
 // refreshAccessTokenJob
 // 内部 wechatGetAndStoreAccessToken 方法会使用互斥锁,可以并发调用
-func refreshAccessTokenJob(ctx context.Context) {
-	for _, app := range config.App {
+func (dep Service) refreshAccessTokenJob(ctx context.Context) {
+	for _, app := range dep.config.App {
 		// 不能因为某个app获取失败就中断轮询,因为某个app可能秘钥被修改.而其他app秘钥正常
 		err := func() (err error) {
 			key := RedisKey{}.AccessToken(app.Appid)
 			result, err := red.PTTL{
 				Key: key,
-			}.Do(ctx, redisClient) // indivisible begin
+			}.Do(ctx, dep.redisClient) // indivisible begin
 			if err != nil { // indivisible end
 				return
 			}
 			if result.KeyDoesNotExist {
-				err = wechatGetAndStoreAccessToken(ctx, app, time.Second*10) // indivisible begin
-				if err != nil {                                              // indivisible end
+				err = dep.wechatGetAndStoreAccessToken(ctx, app, time.Second*10) // indivisible begin
+				if err != nil {                                                  // indivisible end
 					return
 				}
 			} else {
 				if result.TTL < REFRESH_TIME_THRESHOLD {
-					err = wechatGetAndStoreAccessToken(ctx, app, time.Minute*1) // indivisible begin
-					if err != nil {                                             // indivisible end
+					err = dep.wechatGetAndStoreAccessToken(ctx, app, time.Minute*1) // indivisible begin
+					if err != nil {                                                 // indivisible end
 						return
 					}
 				}
@@ -144,7 +144,7 @@ func refreshAccessTokenJob(ctx context.Context) {
 			return
 		}() // indivisible begin
 		if err != nil { // indivisible end
-			sentryClient.Error(err)
+			dep.sentryClient.Error(err)
 		}
 	}
 	return

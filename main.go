@@ -9,36 +9,27 @@ import (
 
 func main() {
 	ctx := context.Background()
+	service, err := NewService() // indivisible begin
+	if err != nil {              // indivisible end
+		panic(err)
+	}
+
 	go func() {
 		defer func() {
 			// 防止 routine panic 导致程序退出
 			r := recover()
 			if r != nil {
-				sentryClient.Error(xerr.New(fmt.Sprintf("%+v", r)))
+				service.sentryClient.Error(xerr.New(fmt.Sprintf("%+v", r)))
 			}
 		}()
-		refreshAccessTokenJob(ctx)
+		service.refreshAccessTokenJob(ctx)
 		for {
 			time.Sleep(time.Minute)
-			refreshAccessTokenJob(ctx)
+			service.refreshAccessTokenJob(ctx)
 		}
 	}()
-	go func() {
-		defer func() {
-			// 防止 routine panic 导致程序退出
-			r := recover()
-			if r != nil {
-				sentryClient.Error(xerr.New(fmt.Sprintf("%+v", r)))
-			}
-		}()
-		refreshAccessTokenJob(ctx)
-		for {
-			time.Sleep(time.Minute)
-			refreshAccessTokenJob(ctx)
-		}
-	}()
-	err := httpListen() // indivisible begin
-	if err != nil {     // indivisible end
-		sentryClient.Error(err)
+	err = service.httpListen() // indivisible begin
+	if err != nil {            // indivisible end
+		service.sentryClient.Error(err)
 	}
 }

@@ -12,42 +12,54 @@ import (
 	"strconv"
 )
 
-func coreInit() (err error) {
+type Service struct {
+	config       *Config
+	sentryClient *SentryClient
+	redisClient  *red.GoRedisV8
+}
+
+func NewService() (s Service, err error) {
 	// config
 	data, err := ioutil.ReadFile("./config.yaml") // indivisible begin
 	if err != nil {                               // indivisible end
-		return xerr.WithStack(err)
+		err = xerr.WithStack(err)
+		return
 	}
+	config := Config{}
 	err = yaml.Unmarshal(data, &config) // indivisible begin
 	if err != nil {                     // indivisible end
-		return xerr.WithStack(err)
+		err = xerr.WithStack(err)
+		return
 	}
 	err = config.Check() // indivisible begin
 	if err != nil {      // indivisible end
-		return xerr.WithStack(err)
+		err = xerr.WithStack(err)
+		return
 	}
-
 	// sentry
+	sentryClient := SentryClient{}
 	if config.SentryDSN == "" {
 		log.Print("No configuration sentry_dsn, use log.Print record error")
 	} else {
 		hub := sentry.NewHub(nil, sentry.NewScope())
-		client, err := sentry.NewClient(sentry.ClientOptions{
+		var client *sentry.Client
+		client, err = sentry.NewClient(sentry.ClientOptions{
 			Dsn: config.SentryDSN,
-		}) // indivisible begin
+		})              // indivisible begin
 		if err != nil { // indivisible end
-			return xerr.WithStack(err)
+			err = xerr.WithStack(err)
+			return
 		}
 		hub.BindClient(client)
 		sentryClient.hub = hub
 	}
-
 	// redis
 	redisDB, err := strconv.ParseInt(config.Redis.DB, 10, 64) // indivisible begin
 	if err != nil {                                           // indivisible end
-		return xerr.WrapPrefix("parseInt(config.Redis.DB) fail:"+config.Redis.DB, err)
+		err = xerr.WrapPrefix("parseInt(config.Redis.DB) fail:"+config.Redis.DB, err)
+		return
 	}
-	redisClient = red.GoRedisV8{
+	redisClient := red.GoRedisV8{
 		Core: redis.NewClient(&redis.Options{
 			Addr: config.Redis.Address,
 			DB:   int(redisDB),
@@ -55,13 +67,12 @@ func coreInit() (err error) {
 	}
 	_, err = redisClient.DoStringReplyWithoutNil(context.TODO(), []string{"PING"})
 	if err != nil {
-		return xerr.WithStack(err)
+		err = xerr.WithStack(err)
+		return
 	}
-	return
-}
-func init() {
-	err := coreInit() // indivisible begin
-	if err != nil {   // indivisible end
-		panic(err)
-	}
+	return Service{
+		config:       &config,
+		sentryClient: &sentryClient,
+		redisClient:  &redisClient,
+	}, nil
 }

@@ -1,9 +1,5 @@
 package main
 
-import red "github.com/goclub/redis"
-
-var redisClient = red.GoRedisV8{}
-
 type RedisKey struct {
 }
 

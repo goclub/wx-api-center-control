@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-var config Config
-
 type Config struct {
 	HttpPort string      `yaml:"http_port"`
 	SK       []ConfigSK  `yaml:"sk"`
@@ -19,7 +17,7 @@ type Config struct {
 	SentryDSN string `yaml:"sentry_dsn"`
 }
 
-func (c Config) Check() (err error) {
+func (config Config) Check() (err error) {
 	if len(config.SK) == 0 {
 		return xerr.New("config.yaml sk 不能为空")
 	}

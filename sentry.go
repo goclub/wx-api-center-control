@@ -5,8 +5,6 @@ import (
 	"log"
 )
 
-var sentryClient = SentryClient{}
-
 type SentryClient struct {
 	hub *sentry.Hub
 }
