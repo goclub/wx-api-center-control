@@ -51,7 +51,7 @@ func (dep Service) httpListen() (err error) {
 			}
 		}
 		if matchAppid == false {
-			return xerr.Reject(1, "appid 不存在", true)
+			return xerr.Reject(1, "appid 不存在(" + req.Appid + ")", true)
 		}
 		// 验证sk有效性
 		matchSK := false
@@ -70,7 +70,7 @@ func (dep Service) httpListen() (err error) {
 		accessToken, getAccessTokenIsNil, err = red.GET{
 			Key: RedisKey{}.AccessToken(matchApp.Appid),
 		}.Do(ctx, dep.redisClient) // indivisible begin
-		if err != nil {            // indivisible end
+		if err != nil { // indivisible end
 			return
 		}
 		// 兜底操作(正常情况喜爱accessToken 会被消费者提前续期)
@@ -84,7 +84,7 @@ func (dep Service) httpListen() (err error) {
 			accessToken, getAccessTokenIsNil, err = red.GET{
 				Key: RedisKey{}.AccessToken(matchApp.Appid),
 			}.Do(ctx, dep.redisClient) // indivisible begin
-			if err != nil {            // indivisible end
+			if err != nil { // indivisible end
 				return
 			}
 			if getAccessTokenIsNil {
