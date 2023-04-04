@@ -23,7 +23,7 @@ func (dep Service) httpListen() (err error) {
 	router.HandleFunc(xhttp.Route{xhttp.POST, "/wx-api-center-control/cgi-bin/ticket/getticket"}, func(c *xhttp.Context) (err error) {
 		ctx := c.Request.Context()
 		var matchApp ConfigApp
-		if matchApp, err = dep.authAndMatch(c); err != nil {
+		if matchApp, err = dep.AuthAndMatch(c); err != nil {
 			return
 		}
 		apiType := c.Request.URL.Query().Get("type")
@@ -44,7 +44,7 @@ func (dep Service) httpListen() (err error) {
 	router.HandleFunc(xhttp.Route{xhttp.POST, "/wx-api-center-control/cgi-bin/token"}, func(c *xhttp.Context) (err error) {
 		ctx := c.Request.Context()
 		var matchApp ConfigApp
-		if matchApp, err = dep.authAndMatch(c); err != nil {
+		if matchApp, err = dep.AuthAndMatch(c); err != nil {
 			return
 		}
 		var accessToken string

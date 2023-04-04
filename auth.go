@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (dep Service) authAndMatch(c *xhttp.Context) (matchApp ConfigApp, err error) {
+func (dep Service) AuthAndMatch(c *xhttp.Context) (matchApp ConfigApp, err error) {
 	req := struct {
 		Appid string `json:"appid"`
 		SK    string `json:"sk"`
