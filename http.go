@@ -3,10 +3,7 @@ package main
 import (
 	xerr "github.com/goclub/error"
 	xhttp "github.com/goclub/http"
-	red "github.com/goclub/redis"
 	"net/http"
-	"strings"
-	"time"
 )
 
 func (dep Service) httpListen() (err error) {
@@ -23,73 +20,36 @@ func (dep Service) httpListen() (err error) {
 			return c.WriteBytes([]byte("system error(error)"))
 		},
 	})
+	router.HandleFunc(xhttp.Route{xhttp.POST, "/wx-api-center-control/cgi-bin/ticket/getticket"}, func(c *xhttp.Context) (err error) {
+		ctx := c.Request.Context()
+		var matchApp ConfigApp
+		if matchApp, err = dep.authAndMatch(c); err != nil {
+			return
+		}
+		apiType := c.Request.URL.Query().Get("type")
+		if apiType == "" {
+			return xerr.Reject(1, "query 中的 type 不能为空", true)
+		}
+		var ticket string
+		if ticket, err = dep.Ticket(ctx, matchApp, apiType); err != nil {
+			return
+		}
+		return c.WriteJSON(struct {
+			xerr.Resp
+			Ticket string `json:"ticket"`
+		}{
+			Ticket: ticket,
+		})
+	})
 	router.HandleFunc(xhttp.Route{xhttp.POST, "/wx-api-center-control/cgi-bin/token"}, func(c *xhttp.Context) (err error) {
 		ctx := c.Request.Context()
-		req := struct {
-			Appid string `json:"appid"`
-			SK    string `json:"sk"`
-		}{}
-		err = c.BindRequest(&req) // indivisible begin
-		if err != nil {           // indivisible end
+		var matchApp ConfigApp
+		if matchApp, err = dep.authAndMatch(c); err != nil {
 			return
 		}
-		// 验证请求格式参数
-		if strings.TrimSpace(req.SK) == "" {
-			err = xerr.Reject(1, "sk不能为空", true) // indivisible begin
-			if err != nil {                      // indivisible end
-				return
-			}
-		}
-		// 验证appid
-		matchAppid := false
-		matchApp := ConfigApp{}
-		for _, app := range dep.config.App {
-			if req.Appid == app.Appid {
-				matchAppid = true
-				matchApp = app
-				break
-			}
-		}
-		if matchAppid == false {
-			return xerr.Reject(1, "appid 不存在("+req.Appid+")", true)
-		}
-		// 验证sk有效性
-		matchSK := false
-		for _, sk := range dep.config.SK {
-			if req.SK == sk.Value {
-				matchSK = true
-				break
-			}
-		}
-		if matchSK == false {
-			return xerr.Reject(1, "sk 错误", true)
-		}
-
 		var accessToken string
-		var getAccessTokenIsNil bool
-		accessToken, getAccessTokenIsNil, err = red.GET{
-			Key: RedisKey{}.AccessToken(matchApp.Appid),
-		}.Do(ctx, dep.redisClient) // indivisible begin
-		if err != nil {            // indivisible end
+		if accessToken, err = dep.AccessToken(ctx, matchApp); err != nil {
 			return
-		}
-		// 兜底操作(正常情况下accessToken 会被消费者提前续期)
-		if getAccessTokenIsNil {
-			dep.sentryClient.Error(xerr.New("accessToken接口出现了意外兜底"))
-			err = dep.wechatGetAndStoreAccessToken(ctx, matchApp, time.Second*10) // indivisible begin
-			if err != nil {                                                       // indivisible end
-				return
-			}
-			// 读取刚存储的 access token
-			accessToken, getAccessTokenIsNil, err = red.GET{
-				Key: RedisKey{}.AccessToken(matchApp.Appid),
-			}.Do(ctx, dep.redisClient) // indivisible begin
-			if err != nil {            // indivisible end
-				return
-			}
-			if getAccessTokenIsNil {
-				return xerr.Reject(1, "系统繁忙,请稍后重试(query fails after the store access token)", true)
-			}
 		}
 		return c.WriteJSON(struct {
 			xerr.Resp

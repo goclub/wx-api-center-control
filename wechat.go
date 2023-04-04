@@ -14,6 +14,65 @@ import (
 
 var httpClient = xhttp.NewClient(&http.Client{})
 
+type TicketReply struct {
+	Ticket    string `json:"ticket"`
+	ExpiresIn int    `json:"expires_in" note:"凭证有效时间，单位：秒。目前是7200秒之内的值。"`
+	Errcode   int    `json:"errcode"`
+	Errmsg    string `json:"errmsg"`
+}
+
+func (dep Service) Ticket(ctx context.Context, matchApp ConfigApp, apiType string) (ticket string, err error) {
+	var accessToken string
+	if accessToken, err = dep.AccessToken(ctx, matchApp); err != nil {
+		return
+	}
+	var getValue string
+	var getIsNil bool
+	if getValue, getIsNil, err = (red.GET{
+		Key: RedisKey{}.Ticket(matchApp.Appid, apiType),
+	}).Do(ctx, dep.redisClient); err != nil {
+		return
+	}
+	if getIsNil == false {
+		ticket = getValue
+		return
+	}
+	httpResult, bodyClose, statusCode, err := httpClient.Send(ctx, xhttp.GET, "https://api.weixin.qq.com", "/cgi-bin/ticket/getticket", xhttp.SendRequest{
+		BeforeSend: func(r *http.Request) (err error) {
+			q := url.Values{}
+			q.Set("type", apiType)
+			q.Set("access_token", accessToken)
+			r.URL.RawQuery = q.Encode()
+			return
+		},
+	}) // indivisible begin
+	defer bodyClose()
+	if err != nil { // indivisible end
+		return
+	}
+	if statusCode != 200 {
+		err = xerr.New("statusCode != 200 \n" + httpResult.DumpRequestResponseString(true))
+		return
+	}
+	var apiReply TicketReply
+	if err = httpResult.ReadResponseBodyAndUnmarshal(xjson.Unmarshal, &apiReply); err != nil {
+		return
+	}
+	if apiReply.Errcode != 0 {
+		err = xerr.New("weixin api response error\n" + httpResult.DumpRequestResponseString(true))
+		return
+	}
+	if _, _, err = (red.SET{
+		Key:    RedisKey{}.Ticket(matchApp.Appid, apiType),
+		Value:  apiReply.Ticket,
+		Expire: time.Duration(apiReply.ExpiresIn) * time.Second,
+	}).Do(ctx, dep.redisClient); err != nil {
+		return
+	}
+	ticket = apiReply.Ticket
+	return
+}
+
 type AccessTokenReply struct {
 	AccessToken string `json:"access_token" note:"access_token 的存储至少要保留 512 个字符空间"`
 	ExpiresIn   int    `json:"expires_in" note:"凭证有效时间，单位：秒。目前是7200秒之内的值。"`
@@ -21,6 +80,35 @@ type AccessTokenReply struct {
 	Errmsg      string `json:"errmsg"`
 }
 
+func (dep Service) AccessToken(ctx context.Context, matchApp ConfigApp) (accessToken string, err error) {
+	var getAccessTokenIsNil bool
+	accessToken, getAccessTokenIsNil, err = red.GET{
+		Key: RedisKey{}.AccessToken(matchApp.Appid),
+	}.Do(ctx, dep.redisClient) // indivisible begin
+	if err != nil { // indivisible end
+		return
+	}
+	// 兜底操作(正常情况下accessToken 会被消费者提前续期)
+	if getAccessTokenIsNil {
+		dep.sentryClient.Error(xerr.New("accessToken接口出现了意外兜底"))
+		err = dep.wechatGetAndStoreAccessToken(ctx, matchApp, time.Second*10) // indivisible begin
+		if err != nil {                                                       // indivisible end
+			return
+		}
+		// 读取刚存储的 access token
+		accessToken, getAccessTokenIsNil, err = red.GET{
+			Key: RedisKey{}.AccessToken(matchApp.Appid),
+		}.Do(ctx, dep.redisClient) // indivisible begin
+		if err != nil { // indivisible end
+			return
+		}
+		if getAccessTokenIsNil {
+			err = xerr.Reject(1, "系统繁忙,请稍后重试(query fails after the store access token)", true)
+			return
+		}
+	}
+	return
+}
 func (dep Service) wechatGetAndStoreAccessToken(ctx context.Context, req ConfigApp, durationOfLock time.Duration) (err error) {
 	// 根据appid进行互斥锁
 	mutex := red.Mutex{
